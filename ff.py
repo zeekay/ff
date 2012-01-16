@@ -6,7 +6,6 @@ from datetime import datetime
 import errno
 import json
 import os
-import subprocess
 import sys
 
 CONFIG_DIR = os.path.expanduser('~/.ff')
@@ -36,8 +35,10 @@ class Session(object):
 
 
 def format_date(timestamp=None):
-    if timestamp: dt = datetime.fromtimestamp(float(timestamp))
-    else: dt = datetime.now()
+    if timestamp:
+        dt = datetime.fromtimestamp(float(timestamp))
+    else:
+        dt = datetime.now()
     return dt.strftime(DATE_FORMAT)
 
 
@@ -55,59 +56,66 @@ def itersessions(include_saved=False):
     else:
         path = os.path.expanduser('~/.mozilla/firefox')
     for profile in (x for x in os.listdir(path) if x.endswith('.default')):
-        yield (profile, os.path.join(path, profile, 'sessionstore.js'))
+        yield os.path.join(path, profile, 'sessionstore.js')
     if include_saved:
         for session in os.listdir(SESSIONS_DIR):
-            print 'saved session:', session
+            yield os.path.join(SESSIONS_DIR, session)
 
-def load_session():
-    profile, session = next(itersessions())
+def load_session(session=None):
+    if session and not os.path.exists(os.path.expanduser(session)):
+        for s in itersessions(include_saved=True):
+            if session in s:
+                session = s
+    elif not session:
+        session = next(itersessions())
+
     with open(session) as f:
         return Session(json.load(f, object_hook=AttrDict))
 
 
 def save_session():
     import shutil
-    profile, session = next(itersessions())
+    session = next(itersessions())
     shutil.copy(session, os.path.join(SESSIONS_DIR, format_date() + '.js'))
 
 
 def replace_session(new_session):
     import shutil
-    profile, current_session = next(itersessions())
-    shutil.copy(new_session, current_session)
+    session = next(itersessions())
+    shutil.copy(new_session, session)
 
 
-def list_tabs():
-    session = load_session()
-    for s_idx, tab in enumerate(session.tabs):
-        for t_idx, entry in enumerate(tab.entries):
-            try:
-                print ':'.join(str(x) for x in [s_idx, t_idx]), entry.title, '-', entry.url
-            except KeyError:
-                pass
+def list_tabs(args):
+    if args.all:
+        sessions = (load_session(s) for s in itersessions(include_saved=True))
+    else:
+        sessions = [args.session]
+    for session in sessions:
+        for s_idx, tab in enumerate(session.tabs):
+            for t_idx, entry in enumerate(tab.entries):
+                try:
+                    print ':'.join(str(x) for x in [s_idx, t_idx]), entry.title, '-', entry.url
+                except KeyError:
+                    pass
 
 
 def list_sessions():
-    for s in itersessions(include_saved=True):
-        print s[0], s[1]
+    for session in itersessions(include_saved=True):
+        print session
 
 
 # commands
 def list_command(args):
-    if args.tabs:
-        list_tabs()
-    elif args.sessions:
+    if args.sessions:
         list_sessions()
     else:
-        list_tabs()
+        list_tabs(args)
 
 
 def read_command(args):
-    session = load_session()
     try:
         s_idx, t_idx = (int(x) for x in args.idx.split(':'))
-        url = session.tabs[s_idx].entries[t_idx].url
+        url = args.session.tabs[s_idx].entries[t_idx].url
     except:
         print 'Invalid index'
         return
@@ -130,21 +138,21 @@ def read_command(args):
 
 def open_command(args):
     import webbrowser
-    session = load_session()
     try:
         s_idx, t_idx = (int(x) for x in args.idx.split(':'))
-        url = session.tabs[s_idx].entries[t_idx].url
+        url = args.session.tabs[s_idx].entries[t_idx].url
     except:
         print 'Invalid index'
         return
     webbrowser.open(url)
 
+
 def save_command(args):
     save_session()
 
+
 def clear_command(args):
-    profile, session = next(itersessions())
-    os.remove(session)
+    os.remove(args.session)
 
 
 if __name__ == '__main__':
@@ -154,12 +162,14 @@ if __name__ == '__main__':
 
     sys.stdout = codecs.getwriter('UTF-8')(sys.stdout)
     parser = argparse.ArgumentParser()
+    parser.add_argument('--session', action='store', help='session to operate on')
     subparsers = parser.add_subparsers()
 
     # list command
-    list_parser = subparsers.add_parser('list', help='List open tabs')
+    list_parser = subparsers.add_parser('list', help='List sessions or tabs')
     list_parser.add_argument('--tabs', action='store_true', help='List open tabs')
-    list_parser.add_argument('--sessions', action='store_true', help='List open tabs')
+    list_parser.add_argument('--sessions', action='store_true', help='List sessions')
+    list_parser.add_argument('--all', action='store_true', help='List tabs from all sessions')
     list_parser.set_defaults(command=list_command)
 
     # save command
@@ -182,7 +192,6 @@ if __name__ == '__main__':
 
     if sys.argv[1:]:
         args = parser.parse_args()
+        args.session = load_session(args.session)
         command = args.command
         command(args)
-    # else:
-    #     list_command()
