@@ -92,6 +92,7 @@ def list_sessions():
     for s in itersessions(include_saved=True):
         print s[0], s[1]
 
+
 # commands
 def list_command(args):
     if args.tabs:
@@ -141,6 +142,10 @@ def open_command(args):
 def save_command(args):
     save_session()
 
+def clear_command(args):
+    profile, session = next(itersessions())
+    os.remove(session)
+
 
 if __name__ == '__main__':
     # make sure config dir exists
@@ -160,6 +165,10 @@ if __name__ == '__main__':
     # save command
     save_parser = subparsers.add_parser('save', help='Save current session')
     save_parser.set_defaults(command=save_command)
+
+    # clear command
+    clear_parser = subparsers.add_parser('clear', help='Clear current session')
+    clear_parser.set_defaults(command=clear_command)
 
     # read command
     read_parser = subparsers.add_parser('read', help='Read idx')
